@@ -319,17 +319,18 @@ public class Misc {
 	public static String formatVectorE_d(ArrayList<Double> in){
 		return formatVectorE_d(in,",", "{","}", 4);
 	}
-	
+
 	public static String formatVectorE_d(ArrayList<Double> in, String separator, String left, String right){
 		return formatVectorE_d(in, separator, left, right, 4);
 	}
 	
 	public static String formatVectorE_d(ArrayList<Double> in, String separator, String left, String right, int nDigits){
-		String seq = left; 
+		String seq = left;
 		for(int i=0;i<in.size();i++){
 			if(i>0)seq+=separator;
 			seq+= String.format("%."+nDigits+"e", in.get(i));
 		}
+
 		return seq+right;
 	}
 	

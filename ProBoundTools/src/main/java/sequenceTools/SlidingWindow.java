@@ -252,8 +252,8 @@ public class SlidingWindow {
 		return ret;
 	}
 
-	public ArrayList<ArrayList<Double> > slidePN(long[] seqCode, int seqLen, int offset, int p, int nn) {
-		ArrayList<ArrayList<Double> > ret = new ArrayList<ArrayList<Double> >(0);
+	public ArrayList<ArrayList<Double>> slidePN(long[] seqCode, int seqLen, int offset, int p, int nn) {
+		ArrayList<ArrayList<Double>> ret = new ArrayList<ArrayList<Double> >(0); //0 -- specified initial capacity
 		int length = 0;
 		double fwSum = 0, efwSum = 0;
 		double rcSum = 0, ercSum = 0;
@@ -570,11 +570,11 @@ public class SlidingWindow {
 		return slidePN(seqCode, seqLen, 0, p, nn_feat);
 	}
 
-	public ArrayList<ArrayList<Double> > slideSN(LongSequence sq, int offset) {
+	public ArrayList<ArrayList<Double>> slideSN(LongSequence sq, int offset) {
 		return slideSN(sq.getValue(), sq.getLength(), offset);
 	}
 
-	public ArrayList<ArrayList<Double> > slideSN(LongSequence sq) {
+	public ArrayList<ArrayList<Double>> slideSN(LongSequence sq) {
 		return slideSN(sq.getValue(), sq.getLength(), 0);
 	}
 

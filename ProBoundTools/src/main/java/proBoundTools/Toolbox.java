@@ -92,7 +92,7 @@ public class Toolbox {
 
 	// Constructor
 	//////////////
-	Toolbox(String generalSchemaFileIn, boolean verboseIn) {
+	public Toolbox(String generalSchemaFileIn, boolean verboseIn) {
 		verbose           = verboseIn;
 		mismatchGauge     = false;
 		generalSchemaFile = generalSchemaFileIn;
@@ -163,8 +163,6 @@ public class Toolbox {
 	///////////////////////////////////////////////
 
 	private void openSequenceFile(String seqF) {
-		
-
 		if(letterComplement==null)
 			setupAlphabet("C-G,A-T", "ACGT");
 		
@@ -1700,10 +1698,13 @@ public class Toolbox {
 			error("The function kMerCount(outTSV, k=8) must have exactly one arguments.");
 		}
 	}
-	
-	
+
+
+	public CountTable getCountTable() {
+		return countTable;
+	}
+
 	public void kMerCount(String outTSV, int kIn, boolean forwardOnly) {
-		
 		if(letterComplement==null)
 			setupAlphabet("C-G,A-T", "ACGT");
 		
@@ -1737,9 +1738,7 @@ public class Toolbox {
 						}
 						firstNeededCharacter = sequence.length()-k+1;
 			    	}
-					
 				} else {
-					
 					for(int x=0; x<sequence.length()-k+1; x++) {
 						String subSeq        = sequence.substring(x,x+k);
 						if( kMerIndex.containsKey(subSeq) ) {
@@ -1785,19 +1784,12 @@ public class Toolbox {
 		
 		restartFile();
 	}
-	
-	
-	
-	public void createProBoundObjects(ArrayList<String> modifications) {
-		
-		// 1) Reads the sequences and creates a ArrayList<LongSeequence> and a zero
-		if(verbose)
-			System.out.println("> Reading sequences.");
 
+	protected ArrayList<LongSequence> readSequences() {
+		//Creates a count table object using the input stream.
 		if(sequenceFile == null)
 			throw new RuntimeErrorException(null, "Error: No sequence file has been specified.");
-		
-		//Creates a count table object using the input stream.
+
 		ArrayList<int[]> counts        = new ArrayList<int[]>();
 		ArrayList<LongSequence> probes = new ArrayList<LongSequence>();
 		Integer sequenceLength         = null;
@@ -1809,45 +1801,44 @@ public class Toolbox {
 				firstNeededCharacter = sequence.length();
 			} while(nextSubstring());
 
-			if(sequenceLength==null) 
+			if(sequenceLength==null)
 				sequenceLength = fullSeq.length();
 			else if(sequenceLength!=fullSeq.length())
 				throw new RuntimeErrorException(null, "Error: All sequences must have the same length. The first sequence has L="
 						+sequenceLength+" but the current sequence ("+fullSeq+") has length "+fullSeq.length()+".");
 
-			
 			probes.add(sc.build(fullSeq));
 			counts.add(new int[1]);
 		}
 		dataTable              = new MultiRoundData("", "", counts, probes, new int[1], sc);
 		if(verbose)
 			System.out.println(">> Number of sequences: "+probes.size());
-		
-		// 2) Create a config/model
-		// 2.1) Clone settings
+		return probes;
+	}
+
+	public JSONObject config(int variableRegionLength, ArrayList<String> modifications) {
 		if(verbose)
 			System.out.println("> Checking the model.");
 
 		JSONObject configClone = ModelComponent.clone_JSON_O(oModel);
-    	JSONObject oCoef       = configClone.getJSONObject("coefficients");
-    	JSONObject oSett       = configClone.getJSONObject("modelSettings");
-    	
-    	//Gets the alphabet
+		JSONObject oCoef       = configClone.getJSONObject("coefficients");
+		JSONObject oSett       = configClone.getJSONObject("modelSettings");
+
+		//Gets the alphabet
 		letterComplement      = oSett.has("letterComplement") ? oSett.getString("letterComplement")       : "C-G,A-T";
 		letterOrder           = oSett.has("letterOrder")      ? oSett.getString("letterOrder") : CombinedLikelihood.alphabetDefToOrderedLetters(letterComplement);
 		setupAlphabet(letterComplement, letterOrder);
-		
-		
+
 		// 2.2) Checks the model
 		// 2.2.1) Checks the binding modes.
 		JSONArray aBM = oCoef.getJSONArray("bindingModes");
 		for(int iBM=0; iBM<aBM.length(); iBM++) {
 			JSONObject oBM = aBM.getJSONObject(iBM);
-			if(!oBM.has("activity")) 
+			if(!oBM.has("activity"))
 				throw new RuntimeErrorException(null, "Error: Binding mode "+iBM+" does not have activities defined. Run buildConsensusModel().");
 			else if(oBM.getJSONArray("activity").length()!=1)
 				throw new RuntimeErrorException(null, "Error: Binding mode "+iBM+" has activities specified for multiple experiments. Run buildConsensusModel().");
-			else if(oBM.getJSONArray("activity").getJSONArray(0).length() != 1) 
+			else if(oBM.getJSONArray("activity").getJSONArray(0).length() != 1)
 				throw new RuntimeErrorException(null, "Error: Binding mode "+iBM+" has multiple activities for the first experiments. Run buildConsensusModel().");
 			if(oBM.has("positionBias") && oBM.getJSONArray("positionBias").length()>0)
 				throw new RuntimeErrorException(null, "Error: Binding mode "+iBM+" has position bias. Run buildConsensusModel().");
@@ -1856,113 +1847,178 @@ public class Toolbox {
 		JSONArray aInt = oCoef.getJSONArray("bindingModeInteractions");
 		for(int iInt=0; iInt<aInt.length(); iInt++) {
 			JSONObject oInt = aInt.getJSONObject(iInt);
-			if(!oInt.has("activity")) 
+			if(!oInt.has("activity"))
 				throw new RuntimeErrorException(null, "Error: Binding mode interaction "+iInt+" does not have activities defined. Run buildConsensusModel().");
 			else if(oInt.getJSONArray("activity").length()!=1)
 				throw new RuntimeErrorException(null, "Error: Binding mode interaction "+iInt+" has activities specified for multiple experiments. Run buildConsensusModel().");
-			else if(oInt.getJSONArray("activity").getJSONArray(0).length() != 1) 
+			else if(oInt.getJSONArray("activity").getJSONArray(0).length() != 1)
 				throw new RuntimeErrorException(null, "Error: Binding mode interaction "+iInt+" has multiple activities for the first experiments. Run buildConsensusModel().");
 			if(oInt.has("positionMatrix"))
 				throw new RuntimeErrorException(null, "Error: Binding mode interaction "+iInt+" has a positionMatrix. Run buildConsensusModel().");
 		}
 		// 2.2.3) Checks so the enrichment model and count tables has been removed:
-    	if(oCoef.has("enrichmentModel") || oSett.has("enrichmentModel"))
+		if(oCoef.has("enrichmentModel") || oSett.has("enrichmentModel"))
 			throw new RuntimeErrorException(null, "Error: The model has coefficients/settings for the enrichment model. Run buildConsensusModel().");
-    	if(oCoef.has("countTable")      || oSett.has("countTable"))
+		if(oCoef.has("countTable")      || oSett.has("countTable"))
 			throw new RuntimeErrorException(null, "Error: The model has coefficients/settings for the count table. Run buildConsensusModel().");
+		JSONObject oCount = new JSONObject();
+		JSONArray aCount  = new JSONArray();
+		oCount.put("h",                    ModelComponent.JSONArrayConvert_d(new double[1]) );
+		aCount.put(oCount);
+		oCoef.put("countTable",            aCount);
 
-    	
-		// 2.3) Create a bare-bones enrichment model and count table
-    	// 2.3.1) CountTable
-    	
-    	// 2.3.1.1) Coefficients
-    	JSONObject oCount = new JSONObject();
-    	JSONArray aCount  = new JSONArray();
-    	oCount.put("h",                    ModelComponent.JSONArrayConvert_d(new double[1]) );
-    	aCount.put(oCount);
-    	oCoef.put("countTable",            aCount);
-    	
-    	// 2.3.1.2) Settings
-    	oCount            = new JSONObject();
-    	oCount.put("countTableFile",       "N/A");
-    	oCount.put("inputFileType",        "N/A");
-    	oCount.put("rightFlank",           "");
-    	oCount.put("leftFlank",            "");
-    	oCount.put("nColumns",             1);
-    	oCount.put("variableRegionLength", probes.get(0).getLength());
-    	aCount  = new JSONArray();
-    	aCount.put(oCount);
-    	oSett.put("countTable", aCount);
-    	
-    	// 2.3.1) Enrichment model
-    	
-    	// 2.3.2.1) Coefficients
-    	JSONObject oEnr = new JSONObject();
-    	JSONArray aEnr  = new JSONArray();
-    	oEnr.put("rho",   ModelComponent.JSONArrayConvert_i(new int[1]));
-    	oEnr.getJSONArray("rho").put(0, 1);
-    	oEnr.put("gamma", ModelComponent.JSONArrayConvert_i(new int[1]));
-    	aEnr.put(oEnr);
-    	oCoef.put("enrichmentModel", aEnr);
-		
-    	// 2.3.2.2) Settings
-    	oEnr            = new JSONObject();
-    	int[] tempNeg   = new int[1];
-    	tempNeg[0]      = -1;
-    	oEnr.put("modelType",               "RhoGamma");
-    	JSONArray aMod = new JSONArray();
-    	if(modifications!=null)
-    		for(String mod : modifications)
-    			aMod.put(mod);
-    	oEnr.put("modifications",           aMod);
-    	oEnr.put("bindingModes",            ModelComponent.JSONArrayConvert_i(tempNeg));
-    	oEnr.put("bindingModeInteractions", ModelComponent.JSONArrayConvert_i(tempNeg));
-    	aEnr  = new JSONArray();
-    	aEnr.put(oEnr);
-    	oSett.put("enrichmentModel", aEnr);
+		// 2.3.1.2) Settings
+		oCount            = new JSONObject();
+		oCount.put("countTableFile",       "N/A");
+		oCount.put("inputFileType",        "N/A");
+		oCount.put("rightFlank",           "");
+		oCount.put("leftFlank",            "");
+		oCount.put("nColumns",             1);
+		oCount.put("variableRegionLength", variableRegionLength);
+		aCount  = new JSONArray();
+		aCount.put(oCount);
+		oSett.put("countTable", aCount);
 
-		// 3) Create ProBound objects
-		if(verbose)
-			System.out.println("> Builds model-component objects.");
-    	componentList                                  = new ArrayList<ModelComponent>();
-		// 3.1) CounTable
-		countTable                                     = new CountTable(configClone, 0, sc, letterComplement, letterOrder, false);
+		// 2.3.1) Enrichment model
+		// 2.3.2.1) Coefficients
+		JSONObject oEnr = new JSONObject();
+		JSONArray aEnr  = new JSONArray();
+		oEnr.put("rho",   ModelComponent.JSONArrayConvert_i(new int[1]));
+		oEnr.getJSONArray("rho").put(0, 1);
+		oEnr.put("gamma", ModelComponent.JSONArrayConvert_i(new int[1]));
+		aEnr.put(oEnr);
+		oCoef.put("enrichmentModel", aEnr);
+
+		// 2.3.2.2) Settings
+		oEnr            = new JSONObject();
+		int[] tempNeg   = new int[1];
+		tempNeg[0]      = -1;
+		oEnr.put("modelType",               "RhoGamma");
+		JSONArray aMod = new JSONArray();
+		if(modifications!=null)
+			for(String mod : modifications)
+				aMod.put(mod);
+		oEnr.put("modifications",           aMod);
+		oEnr.put("bindingModes",            ModelComponent.JSONArrayConvert_i(tempNeg));
+		oEnr.put("bindingModeInteractions", ModelComponent.JSONArrayConvert_i(tempNeg));
+		aEnr  = new JSONArray();
+		aEnr.put(oEnr);
+		oSett.put("enrichmentModel", aEnr);
+
+		return configClone;
+	}
+
+	protected void constructCountTable(JSONObject configClone) {
+		countTable = new CountTable(configClone, 0, sc, letterComplement, letterOrder, false);
 		countTable.setNThreads(1);           //Sets the number of threads
 		countTable.loadDataTable(dataTable); //Loads the data
-		componentList.add(countTable);
-		
+	}
+
+	protected void createBindingModeObj(JSONObject configClone) {
 		// 3.2) Add binding modes.
-		bindingModes                                   = new ArrayList<BindingMode>();
-		int nBindingModes                              = configClone.getJSONObject("modelSettings").getJSONArray("bindingModes").length();
+		bindingModes = new ArrayList<BindingMode>();
+		int nBindingModes = configClone.getJSONObject("modelSettings").getJSONArray("bindingModes").length();
 		for(int iBM=0; iBM<nBindingModes; iBM++) {
 			BindingMode newBM = new BindingMode(configClone, iBM, sc, letterComplement, letterOrder);
 			newBM.addCountTable(countTable);
 			newBM.setComponentInclusion(true);
-			bindingModes.add(   newBM);
-			componentList.add(  newBM);
+			bindingModes.add(newBM);
+			componentList.add(newBM);
 		}
-		
+
 		// 3.3) Build binding model interactions.
 		interactions = new ArrayList<BindingModeInteraction>();
-		int nInteractions                              = configClone.getJSONObject("modelSettings").getJSONArray("bindingModeInteractions").length();
+		int nInteractions = configClone.getJSONObject("modelSettings").getJSONArray("bindingModeInteractions").length();
 		for(int iInt=0; iInt<nInteractions; iInt++) {
 			BindingModeInteraction newInt = new BindingModeInteraction(configClone, iInt, bindingModes);
 			newInt.addCountTable(countTable);
 			interactions.add(    newInt);
 			componentList.add(   newInt);
 		}
-		
-    	// 3.4). Build the enrichment models.
-		enrichmentModel                  = EnrichmentModel.buildEnrichmentModel(configClone, 0, countTable, bindingModes, interactions);
+
+		// 3.4). Build the enrichment models.
+		enrichmentModel = EnrichmentModel.buildEnrichmentModel(configClone, 0, countTable, bindingModes, interactions);
 		enrichmentModel.includeComponent = true;
+	}
+
+	protected void createComponentList() {
+		componentList = new ArrayList<ModelComponent>();
+		componentList.add(countTable);
+	}
+
+	protected ArrayList<LongSequence> processExisting(ArrayList<String> unprocessedProbes) {
+		//todo make sure all probes have the same size
+		ArrayList<int[]> counts        = new ArrayList<int[]>();
+		ArrayList<LongSequence> probes = new ArrayList<LongSequence>();
+		Integer sequenceLength         = null;
+
+		int nProbes = unprocessedProbes.size();
+		for(int iProbe=0; iProbe<nProbes; iProbe++) {
+			String fullSeq = unprocessedProbes.get(iProbe);
+
+			if(sequenceLength==null)
+				sequenceLength = fullSeq.length();
+			else if(sequenceLength!=fullSeq.length())
+				throw new RuntimeErrorException(null, "Error: All sequences must have the same length. The first sequence has L="
+						+sequenceLength+" but the current sequence ("+fullSeq+") has length "+fullSeq.length()+".");
+
+			probes.add(sc.build(fullSeq));
+			counts.add(new int[1]);
+		}
+
+		dataTable = new MultiRoundData("", "", counts, probes, new int[1], sc);
+		if(verbose)
+			System.out.println(">> Number of sequences: " + probes.size());
+		return probes;
+	}
+
+	public void inputExistingSequnces(ArrayList<String> unprocessedProbes, ArrayList<String> modifications) {
+		if(verbose)
+			System.out.println("> Processing existing sequences.");
+
+		ArrayList<LongSequence> probes = processExisting(unprocessedProbes); //creates dataTable
+
+		JSONObject configClone = config(probes.get(0).getLength(), modifications);
+		// 3) Create ProBound objects
+		if(verbose)
+			System.out.println("> Builds model-component objects.");
+
+		constructCountTable(configClone);
+		createComponentList();
+
+		createBindingModeObj(configClone);
 		countTable.setEnrichmentModel(enrichmentModel);
-		componentList.add(            enrichmentModel);
+		componentList.add(enrichmentModel);
 
 		// 4) Sets the coefficients in the model
 		if(verbose)
 			System.out.println("> Sets the coeffficients.");
 		ModelComponent.readFromJSON(configClone, "coefficients", componentList);
-		
+	}
+
+	public void createProBoundObjects(ArrayList<String> modifications) {
+		// 1) Reads the sequences and creates a ArrayList<LongSeequence> and a zero
+		if(verbose)
+			System.out.println("> Reading sequences.");
+
+		ArrayList<LongSequence> probes = readSequences(); //creates dataTable
+
+		JSONObject configClone = config(probes.get(0).getLength(), modifications);
+		// 3) Create ProBound objects
+		if(verbose)
+			System.out.println("> Builds model-component objects.");
+
+		constructCountTable(configClone);
+		createComponentList();
+
+		createBindingModeObj(configClone);
+		countTable.setEnrichmentModel(enrichmentModel);
+		componentList.add(enrichmentModel);
+
+		// 4) Sets the coefficients in the model
+		if(verbose)
+			System.out.println("> Sets the coeffficients.");
+		ModelComponent.readFromJSON(configClone, "coefficients", componentList);
 	}
 	
 	public void affinitySum(ArrayList<String> args) {
@@ -1987,8 +2043,7 @@ public class Toolbox {
 	
 	public void affinitySum(String outFile, ArrayList<String> modifications) {
 		
-		//TODO: Currently the non-specific binding is added once per probe. 
-		
+		//TODO: Currently the non-specific binding is added once per probe.
 
 		// 1) Creates proBound Objects.
 		createProBoundObjects(modifications);

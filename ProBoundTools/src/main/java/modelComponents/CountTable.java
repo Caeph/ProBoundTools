@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.Arrays;
 
 //import org.apache.commons.math3.random.MersenneTwister;
 import org.json.*;
@@ -19,6 +20,7 @@ import base.MersenneTwisterFast;
 import modelComponents.MultiRoundData;
 import proBoundTools.Misc;
 import sequenceTools.*;
+import modelComponents.ProfileStorage;
 
 public class CountTable extends ModelComponent  {
 	
@@ -65,7 +67,7 @@ public class CountTable extends ModelComponent  {
 	private ArrayList<String> trIn, trOut;
 	
 	//Object defining the enrichment between the columns
-	EnrichmentModel enr;
+	protected EnrichmentModel enr;
 	
 	
 	///////////////////////
@@ -74,7 +76,12 @@ public class CountTable extends ModelComponent  {
 	
 	
 	//Default constructor (Constructor that doesn't read the data).
-	public CountTable(JSONObject config, int iExpIn, LongSequence.SequenceClass scIn, String letterComplementIn, String letterOrderIn, boolean loadData) {
+	public CountTable(JSONObject config,
+					  int iExpIn,
+					  LongSequence.SequenceClass scIn,
+					  String letterComplementIn,
+					  String letterOrderIn,
+					  boolean loadData) {
 		super("countTable");
 
 		iComp          = iExpIn;
@@ -737,18 +744,18 @@ public class CountTable extends ModelComponent  {
 		
 		return;
 	}
-	
-	
-	public void writeAlphaTable(String outAlphaFile) /*throws Exception*/ {
-		
+
+
+	public ArrayList<double[]> calculateAlphaTable()
+	{
 		int nRounds                   = fullTable.countPerRound.length;
 		double[] alphaSeq             = new double[enr.nModes];
 		double[] alphaInt             = new double[enr.nInteractions];
 		double[] alphaRI              = new double[nRounds];
-		
+
 		ArrayList<ArrayList<ArrayList<Double>>> longAlphaList
-		                              = new ArrayList<ArrayList<ArrayList<Double>>>();
-		
+				= new ArrayList<ArrayList<ArrayList<Double>>>();
+
 		for(int bm=0; bm<enr.nModes; bm++)
 			longAlphaList.add(null);
 
@@ -758,8 +765,24 @@ public class CountTable extends ModelComponent  {
 
 		//Loops over probes.
 		int nSequences		          = longProbes.size();
+
+		//Loops over sequences, computes affinity sums (alphas), and writes to file
+		ArrayList<double[]> alphaRIs = new ArrayList<double[]>();
+
+		for(int iProbe=0; iProbe<nSequences; iProbe++) {
+			LongSequence currentProbeSeq = longProbes.get(iProbe);
+			enr.computeAlphas(sw, alphaSeq, alphaInt, alphaRI, longAlphaList, currentProbeSeq);
+			alphaRIs.add(alphaRI.clone());
+			//Writes the table
+			//System.out.println(longProbes.get(iProbe).toString() + "\t" + Misc.formatVector_d(alphaRI, "\t", "", "", 8));
+		}
+
+		return alphaRIs;
+	}
+	
+	
+	public void writeAlphaTable(String outAlphaFile) /*throws Exception*/ {
 		PrintStream original          = System.out;
-		
 		try {
 			System.setOut(new PrintStream(new FileOutputStream(outAlphaFile, false)));
 		} catch (FileNotFoundException e) {
@@ -767,26 +790,38 @@ public class CountTable extends ModelComponent  {
 			e.printStackTrace();
 			System.exit(1);
 		}
-		
-		//Loops over sequences, computes affinity sums (alphas), and writes to file
+
+		ArrayList<double[]> alphaRIs = calculateAlphaTable();
+		int nSequences = longProbes.size();
 		for(int iProbe=0; iProbe<nSequences; iProbe++) {
-			LongSequence currentProbeSeq = longProbes.get(iProbe);
-			enr.computeAlphas(sw, alphaSeq, alphaInt, alphaRI, longAlphaList, currentProbeSeq);
-
 			//Writes the table
-			System.out.println(longProbes.get(iProbe).toString() + "\t" + Misc.formatVector_d(alphaRI, "\t", "", "", 8));
-
+			String current_alphaRI = Misc.formatVector_d(alphaRIs.get(iProbe), "\t", "", "", 8);
+			System.out.println(longProbes.get(iProbe).toString() + "\t" + current_alphaRI);
 		}
-		
+
 		//Returns to original stream.
 		System.setOut(original);
 		
 		return;
 	}
-	
-	public void writeBindingModeAlphas(String outAlphaFile, String outFormat) {
-		
-		//Creates a list of relevant sliding windows and binding modes
+
+
+	private ArrayList<ArrayList<Double>> getLongListAlpha(BindingMode oBM,
+														  SlidingWindow oSW,
+														  LongSequence currentProbeSeq
+														  )
+	{
+		boolean ss = oBM.singleStrand;
+		ArrayList<ArrayList<Double>> longAlphaList;
+		if(!oBM.swIncludeDi) {
+			longAlphaList = oSW.slidePN(currentProbeSeq, 1 );
+		} else {
+			longAlphaList = oSW.slidePN(currentProbeSeq, Math.min(oBM.dInt+1, 2) );
+		}
+		return longAlphaList;
+	}
+
+	public ArrayList<ArrayList<Double>> calculateAggregateBindingModeAlphas(String outFormat) {
 		ArrayList<BindingMode> bmList     = new ArrayList<BindingMode>();
 		ArrayList<SlidingWindow> swList   = new ArrayList<SlidingWindow>();
 		for(BindingMode oBM: enr.bindingModes) {
@@ -795,12 +830,142 @@ public class CountTable extends ModelComponent  {
 				swList.add(oBM.getSlidingWindow(iComp, enr.modifications));
 			}
 		}
-		
-		//Loops over probes.
-		int nSequences		          = longProbes.size();
-		PrintStream original          = System.out;
-		
-		//Opens output file
+		int nSequences = longProbes.size();
+		ArrayList<ArrayList<Double>> results = new ArrayList<ArrayList<Double>>();
+
+		for(int iProbe=0; iProbe<nSequences; iProbe++) {
+			LongSequence currentProbeSeq = longProbes.get(iProbe);
+			ArrayList<Double> probeResults = new ArrayList<Double>();
+			for(int iBM=0; iBM<bmList.size(); iBM++) {
+				//Scores the sequence
+				BindingMode oBM   = bmList.get(iBM);
+				SlidingWindow oSW = swList.get(iBM);
+				boolean ss        = oBM.singleStrand;
+
+				ArrayList<ArrayList<Double>> longAlphaList = getLongListAlpha(oBM, oSW, currentProbeSeq);
+
+				double result = -1;
+				switch (outFormat) {
+					case "max":
+						double maxValue  = Array.max(longAlphaList.get(0));
+						if(!ss)
+							maxValue = Math.max(maxValue,  Array.max(longAlphaList.get(1)));
+						result = maxValue;
+						break;
+					case "sum":
+						double sumValue  = Array.sum(longAlphaList.get(0));
+						if(!ss)
+							sumValue+= Array.sum(longAlphaList.get(1));
+						result = sumValue;
+						break;
+					case "mean":
+						int n = longAlphaList.get(0).size();
+						double meanValue =                 (Array.sum(longAlphaList.get(0))/n);
+						if(!ss)
+							meanValue = 0.5 * (meanValue + (Array.sum(longAlphaList.get(1))/n));
+						result = meanValue;
+						break;
+					default:
+						System.err.println("ERROR: Invalid output format: '"+outFormat+"'.");
+						System.exit(1);
+						break;
+				}
+				probeResults.add(result);
+			}
+			results.add(probeResults);
+		}
+		return results;
+	}
+
+
+	public ArrayList<ArrayList<ProfileStorage>> calculateProfileBindingModeAlphas() {
+		ArrayList<BindingMode> bmList     = new ArrayList<BindingMode>();
+		ArrayList<SlidingWindow> swList   = new ArrayList<SlidingWindow>();
+		for(BindingMode oBM: enr.bindingModes) {
+			if(oBM.includeComponent && oBM.k>0) {
+				bmList.add(oBM);
+				swList.add(oBM.getSlidingWindow(iComp, enr.modifications));
+			}
+		}
+		int nSequences = longProbes.size();
+		ArrayList<ArrayList<ProfileStorage>> results = new ArrayList<ArrayList<ProfileStorage>>();
+
+		for(int iProbe=0; iProbe<nSequences; iProbe++) {
+			LongSequence currentProbeSeq = longProbes.get(iProbe);
+			ArrayList<ProfileStorage> probeResults = new ArrayList<ProfileStorage>();
+			for(int iBM=0; iBM<bmList.size(); iBM++) {
+				//Scores the sequence
+				BindingMode oBM = bmList.get(iBM);
+				SlidingWindow oSW = swList.get(iBM);
+				boolean ss = oBM.singleStrand;
+				ArrayList<ArrayList<Double>> longAlphaList = getLongListAlpha(oBM, oSW, currentProbeSeq);
+
+				Collections.reverse(longAlphaList.get(1));
+				ArrayList<Double> forward = longAlphaList.get(0);
+				ArrayList<Double> second;
+				if (!ss) {
+					second = longAlphaList.get(1);
+				} else {
+					double[] array = (ModelComponent.zero_d(longAlphaList.get(1).size()));
+					second = new ArrayList<Double>();
+					for (Double item : array) {
+						second.add(item);
+					}
+				}
+				ProfileStorage storage = new ProfileStorage(
+						forward,
+						second);
+				probeResults.add(storage);
+			}
+			results.add(probeResults);
+		}
+		return results;
+	}
+
+	protected void writeAggregateBindingModeAlphas(ArrayList<ArrayList<Double>> alphas) {
+		int nSequences = longProbes.size();
+		int nDigits = 5;
+		for(int iProbe=0; iProbe<nSequences; iProbe++) {
+			LongSequence currentProbeSeq = longProbes.get(iProbe);
+			ArrayList<Double> results = alphas.get(iProbe);
+			String resultStr = "";
+			boolean first = true;
+			for (Double value : results) {
+				if (first) {
+					resultStr += String.format("%."+nDigits+"e", value);
+					first = false;
+				}
+				else {
+					resultStr += "\t" + String.format("%."+nDigits+"e", value);
+				}
+			}
+			System.out.println(currentProbeSeq.toString() + "\t" + resultStr);
+		}
+	}
+
+	protected void writeProfileBindingModeAlphas(ArrayList<ArrayList<ProfileStorage>> profileResults) {
+		int nSequences = longProbes.size();
+		int nDigits = 5;
+		for(int iProbe=0; iProbe<nSequences; iProbe++) {
+			LongSequence currentProbeSeq = longProbes.get(iProbe);
+			ArrayList<ProfileStorage> results = profileResults.get(iProbe);
+			boolean first = true;
+			String resultStr = "";
+			for (ProfileStorage storage : results) {
+				if (first) {
+					resultStr += storage.getString();
+					first = false;
+				}
+				else {
+					resultStr += "\t" + storage.getString();
+				}
+			}
+			System.out.println(currentProbeSeq.toString() + "\t" + resultStr);
+		}
+	}
+
+	public void writeBindingModeAlphas(String outAlphaFile, String outFormat) {
+		PrintStream original = System.out;
 		if(!outAlphaFile.equals("-")) {
 			try {
 				System.setOut(new PrintStream(new FileOutputStream(outAlphaFile, false)));
@@ -810,74 +975,25 @@ public class CountTable extends ModelComponent  {
 				System.exit(1);
 			}
 		}
-		
-		//Loops over sequences, computes affinity sums (alphas), and writes to file
-		ArrayList<ArrayList<Double>> longAlphaList;
-		for(int iProbe=0; iProbe<nSequences; iProbe++) {
-			
-			LongSequence currentProbeSeq = longProbes.get(iProbe);
-			
-			System.out.print(currentProbeSeq.toString());
-			
-			for(int iBM=0; iBM<bmList.size(); iBM++) {
-				
-				//Scores the sequence
-				BindingMode oBM   = bmList.get(iBM);
-				SlidingWindow oSW = swList.get(iBM);
-				boolean ss        = oBM.singleStrand;
-				
-				if(!oBM.swIncludeDi) {
-					longAlphaList = oSW.slidePN(currentProbeSeq,                       1 );
-				} else {
-					longAlphaList = oSW.slidePN(currentProbeSeq, Math.min(oBM.dInt+1, 2) );
-				}
-				String colString = "";
-				int nDigits      = 5;
-				if(outFormat.equals("max")) {
-					double maxValue  = Array.max(longAlphaList.get(0));
-					if(!ss)
-						maxValue = Math.max(maxValue,  Array.max(longAlphaList.get(1)));
-					colString        = String.format("%."+nDigits+"e", maxValue);
 
-				} else if(outFormat.equals("sum")) {
-					double sumValue  = Array.sum(longAlphaList.get(0));
-					if(!ss)
-							sumValue+= Array.sum(longAlphaList.get(1));
-					colString        = String.format("%."+nDigits+"e", sumValue);
-					
-				} else if(outFormat.equals("mean")) {
-					int n = longAlphaList.get(0).size();
-					double meanValue =                 (Array.sum(longAlphaList.get(0))/n);
-					if(!ss) 
-						meanValue = 0.5 * (meanValue + (Array.sum(longAlphaList.get(1))/n));
-					colString        = String.format("%."+nDigits+"e", meanValue);
-
-				} else if(outFormat.equals("profile")) {
-					Collections.reverse(longAlphaList.get(1));
-					colString        = "" +   Misc.formatVectorE_d(                      longAlphaList.get(0),         ",", "", "", 5);
-					if(!ss)
-						colString   += "\t" + Misc.formatVectorE_d(                      longAlphaList.get(1),         ",", "", "", 5);
-					else
-						colString   += "\t" + Misc.formatVectorE_d(ModelComponent.zero_d(longAlphaList.get(1).size()), ",", "", "", 5);
-					
-					
-					
-				} else {
-					System.err.println("ERROR: Invalid output format: '"+outFormat+"'.");
-					System.exit(1);
-				}
-				System.out.print("\t"+colString);
-			}
-			System.out.println("");
+		switch (outFormat) {
+			case "sum":
+			case "max":
+			case "mean":
+				ArrayList<ArrayList<Double>> aggregateValues = calculateAggregateBindingModeAlphas(outFormat);
+				writeAggregateBindingModeAlphas(aggregateValues);
+				break;
+			case "profile":
+				ArrayList<ArrayList<ProfileStorage>> profileValues = calculateProfileBindingModeAlphas();
+				writeProfileBindingModeAlphas(profileValues);
+				break;
+			default:
+				System.err.println("ERROR: Invalid output format: '"+outFormat+"'.");
+				System.exit(1);
+				break;
 		}
-		
-		//Returns to original stream.
-		System.setOut(original);
-		
-		return;
-		
 	}
-	
+
 	//Uses the count table to compute a weight:
 	// (maxStrandMean / minStrandMean) * maxValue
 	public HashMap<Integer,Double> getEmpericalBindingModeActivities() {
