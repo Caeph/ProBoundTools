@@ -12,3 +12,4 @@ To run ProBoundTools, run:
 
 java -cp ProBoundTools/target/ProBound-jar-with-dependencies.jar proBoundTools/App -c 'loadMotifCentralModel(15413).addNScoring().inputTXT(demo/initialPool.30mer1.R0.txt).bindingModeScores(/dev/stdout)'
 
+This forked version is functionally equivalent but the code architecture permits using access from a Python module.
