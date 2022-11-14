@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPInputStream;
+import java.util.Locale;
 
 import javax.management.RuntimeErrorException;
 

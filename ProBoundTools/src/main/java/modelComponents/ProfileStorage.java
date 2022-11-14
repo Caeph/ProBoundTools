@@ -28,13 +28,17 @@ public class ProfileStorage {
 		this.second = second;
 	}
 
-	public ArrayList<Double> getFirst()
+	public Double[] getFirst()
 	{
-		return this.first;
+		Double[] output = new Double[first.size()];
+		output = first.toArray(output);
+		return output;
 	}
-	public ArrayList<Double> getSecond()
+	public Double[] getSecond()
 	{
-		return this.second;
+		Double[] output = new Double[second.size()];
+		output = second.toArray(output);
+		return output;
 	}
 
 	public String getString() {
